@@ -10,11 +10,18 @@ import SwiftUI
 @main
 struct GoldenHourApp: App {
     @StateObject var vManager = viewModel()
+    @AppStorage(onboardingCompletedKey) private var hasOnboarded = false
     var body: some Scene {
         WindowGroup {
-            SpawnPoint()
-                .environmentObject(vManager)
-                .weatherThemed(using: vManager)
+            Group {
+                if hasOnboarded {
+                    SpawnPoint()
+                } else {
+                    OnboardingView()
+                }
+            }
+            .environmentObject(vManager)
+            .weatherThemed(using: vManager)
         }
     }
 }

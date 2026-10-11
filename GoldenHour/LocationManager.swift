@@ -10,7 +10,6 @@ import Combine
 import OSLog
 import CoreLocation
 
-/// Gets the user's approximate location, one fix at a time, retrying until it gets one.
 @MainActor
 final class LocationManager: NSObject, ObservableObject {
     @Published var location: CLLocation?
@@ -26,11 +25,10 @@ final class LocationManager: NSObject, ObservableObject {
 
     override init() {
         super.init()
-        manager.delegate = self  // Immediately reports the current permission, which starts the first request.
-        manager.desiredAccuracy = kCLLocationAccuracyKilometer  // Plenty for weather; faster and saves battery.
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyKilometer
     }
 
-    /// Asks for permission if needed, then for a single location fix.
     func requestLocation() {
         switch authorizationStatus {
         case .notDetermined:
@@ -51,7 +49,6 @@ final class LocationManager: NSObject, ObservableObject {
         manager.requestLocation()
     }
 
-    /// Tries again after a delay that doubles each time, up to a minute.
     private func scheduleRetry() {
         let delay = retryDelay
         retryDelay = min(retryDelay * 2, .seconds(60))
@@ -72,7 +69,6 @@ final class LocationManager: NSObject, ObservableObject {
 
         switch (error as? CLError)?.code {
         case .locationUnknown:
-            // No fix yet. In the simulator, set one under Features → Location.
             AppLog.location.notice("No location fix yet")
             scheduleRetry()
         case .denied:

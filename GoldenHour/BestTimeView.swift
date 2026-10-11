@@ -7,7 +7,6 @@
 
 import SwiftUI
 
-/// The best time for photos in the next 24 hours, e.g. "6:15 – 7:00 PM today".
 struct BestTimeView: View {
     @EnvironmentObject var vManager: viewModel
 
@@ -35,7 +34,6 @@ struct BestTimeView: View {
         .frame(maxWidth: .infinity)
     }
 
-    /// "Now until 7:00 PM", "6:15 – 7:00 PM today" or "6:40 – 7:30 AM tomorrow".
     private func timeText(for best: BestPhotoTime) -> String {
         let end = best.end.formatted(date: .omitted, time: .shortened)
         if best.isNow() {
@@ -46,7 +44,6 @@ struct BestTimeView: View {
         return "\(range) \(day)"
     }
 
-    /// "Score 93: golden hour with scattered clouds".
     private func reason(for best: BestPhotoTime) -> String {
         let details = best.score.factors.reduce(into: [String: String]()) { $0[$1.name] = $1.detail }
         let light = (details["Light"] ?? "").lowercased()

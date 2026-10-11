@@ -8,11 +8,10 @@
 import SwiftUI
 import WeatherKit
 
-/// One hour of the forecast: time, conditions, chance of rain and temperature.
-/// Hours inside the best time for photos get a small camera.
 struct HourlyStruct: View {
     let hour: HourWeather
     var isBestTime = false
+    @AppStorage(temperatureUnitKey) private var unit = TemperatureUnit.automatic
 
     var body: some View {
         HStack(spacing: 14) {
@@ -30,9 +29,8 @@ struct HourlyStruct: View {
             Image(systemName: hour.symbolName)
                 .font(.title3)
                 .symbolRenderingMode(.hierarchical)
-                .frame(width: 32, alignment: .center)  // Symbols differ in width; keep rows aligned.
+                .frame(width: 32, alignment: .center)
 
-            // Only mention rain when it's reasonably likely.
             if hour.precipitationChance >= 0.2 {
                 Text(hour.precipitationChance.formatted(.percent.precision(.fractionLength(0))))
                     .font(.subheadline.weight(.medium).monospacedDigit())
@@ -41,7 +39,7 @@ struct HourlyStruct: View {
 
             Spacer()
 
-            Text(hour.temperature.formatted(.measurement(width: .narrow, usage: .weather, numberFormatStyle: .number.precision(.fractionLength(0)))))
+            Text(unit.format(hour.temperature))
                 .font(.title2.weight(.bold))
                 .fontDesign(.serif)
                 .monospacedDigit()
@@ -54,7 +52,6 @@ struct HourlyStruct: View {
         }
     }
 
-    /// "Now" for the current hour, otherwise "3 PM".
     private var timeText: String {
         if Calendar.current.isDate(hour.date, equalTo: .now, toGranularity: .hour) {
             return "Now"
@@ -63,7 +60,6 @@ struct HourlyStruct: View {
     }
 }
 
-/// The next 24 hours as a list of `HourlyStruct` rows.
 struct HourlyForecastView: View {
     @EnvironmentObject var vManager: viewModel
 
@@ -91,7 +87,6 @@ struct HourlyForecastView: View {
         }
     }
 
-    /// True if any part of this hour falls inside the best time for photos.
     private func isBestTime(_ hour: HourWeather) -> Bool {
         guard let best = vManager.bestPhotoTime else { return false }
         let hourEnd = hour.date.addingTimeInterval(60 * 60)

@@ -12,8 +12,17 @@ struct SpawnPoint: View {
     @Environment(\.weatherTheme) private var theme
     var body: some View {
         TabView {
+
+            Tab("Gallery", systemImage: "photo.on.rectangle") {
+                GalleryView()
+                    .environmentObject(vManager)
+            }
             Tab("Home",systemImage: "house") {
                 MainMenuView()
+                    .environmentObject(vManager)
+            }
+            Tab("Settings", systemImage: "gearshape") {
+                SettingsView()
                     .environmentObject(vManager)
             }
         }

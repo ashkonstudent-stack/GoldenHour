@@ -11,17 +11,21 @@ import Combine
 import OSLog
 import CoreLocation
 
-/// Fetches current conditions and the hourly forecast from WeatherKit.
 @MainActor
 final class WeatherKitHandler: ObservableObject {
-    /// Conditions right now, or nil until the first successful fetch.
     @Published var currentWeather: CurrentWeather?
 
-    /// Hour-by-hour forecast, starting from midnight today.
     @Published var hourlyForecast: [HourWeather] = []
 
-    /// A user-facing explanation when the last fetch failed; nil after a success.
     @Published var errorMessage: String?
+
+    /// Apple requires showing the Apple Weather mark and a legal link wherever its data appears.
+    @Published var attribution: WeatherAttribution?
+
+    func loadAttribution() async {
+        guard attribution == nil else { return }
+        attribution = try? await WeatherService.shared.attribution
+    }
 
     func fetchWeather(lattitude: Double, longtitude: Double) async {
         let location = CLLocation(latitude: lattitude, longitude: longtitude)

@@ -416,7 +416,8 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = GoldenHour/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "We need your location to fetch the local weather data";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Take photos of the sunset to save and score them";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "GoldenHour uses your location to find the sun and your local weather.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -452,7 +453,8 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = GoldenHour/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "We need your location to fetch the local weather data";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Take photos of the sunset to save and score them";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "GoldenHour uses your location to find the sun and your local weather.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

@@ -11,15 +11,8 @@ import OSLog
 import CoreLocation
 import WeatherKit
 
-/// Connects `LocationManager` and `WeatherKitHandler` and keeps `theme` in step
-/// with the sky outside. Owned by `viewModel`; attach with `.weatherThemed(using:)`.
-///
-/// - New location → fetch weather if needed → update theme.
-/// - New weather → update theme.
-/// - Every minute → update theme (the sun moves) and refetch weather if stale.
 @MainActor
 final class WeatherThemeProvider: ObservableObject {
-    /// Starts as an estimate from the clock until location arrives.
     @Published private(set) var theme: WeatherTheme = .estimatedNow
 
     let locationManager: LocationManager
@@ -30,8 +23,8 @@ final class WeatherThemeProvider: ObservableObject {
     private var lastFetch: (date: Date, location: CLLocation)?
     private var cancellables = Set<AnyCancellable>()
 
-    private let refreshInterval: TimeInterval = 15 * 60  // after a successful fetch
-    private let retryInterval: TimeInterval = 55         // until a fetch succeeds
+    private let refreshInterval: TimeInterval = 15 * 60
+    private let retryInterval: TimeInterval = 55
     private let refetchDistance: CLLocationDistance = 5_000
 
     init(locationManager: LocationManager, weatherHandler: WeatherKitHandler) {
@@ -42,7 +35,6 @@ final class WeatherThemeProvider: ObservableObject {
         startMinuteTimer()
     }
 
-    /// Asks for location (and permission, the first time). Safe to call repeatedly.
     func refresh() {
         AppLog.theme.info("Refresh requested")
         locationManager.requestLocation()
@@ -107,7 +99,6 @@ final class WeatherThemeProvider: ObservableObject {
     // MARK: - Theme
 
     private func updateTheme(reason: String) {
-        // Use the real sun position when we know where the user is; otherwise estimate from the clock.
         let sun = location.map {
             SunPosition.at(.now, latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude)
         } ?? .estimated(at: .now)
@@ -151,26 +142,25 @@ extension SkyCondition {
 private struct WeatherThemeRoot: ViewModifier {
     @ObservedObject var vManager: viewModel
     @Environment(\.scenePhase) private var scenePhase
+    /// Until onboarding is done, don't refresh: that would ask for location before onboarding explains why.
+    @AppStorage(onboardingCompletedKey) private var hasOnboarded = false
 
     func body(content: Content) -> some View {
         content
             .environment(\.weatherTheme, vManager.theme)
             .tint(vManager.theme.accentColor)
-            .task { vManager.themeProvider.refresh() }
+            .task { if hasOnboarded { vManager.themeProvider.refresh() } }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { vManager.themeProvider.refresh() }
+                if phase == .active && hasOnboarded { vManager.themeProvider.refresh() }
             }
     }
 }
 
 extension View {
-    /// Apply once at the root. Starts the view model's location → weather updates and
-    /// publishes its live theme to `@Environment(\.weatherTheme)`.
     func weatherThemed(using vManager: viewModel) -> some View {
         modifier(WeatherThemeRoot(vManager: vManager))
     }
 
-    /// Pins a specific theme, e.g. for previews: `.weatherTheme(.preview(sunElevation: 1))`.
     func weatherTheme(_ theme: WeatherTheme) -> some View {
         environment(\.weatherTheme, theme).tint(theme.accentColor)
     }

@@ -7,8 +7,6 @@
 
 import SwiftUI
 
-/// A `ScrollView` over the live sky background. Text defaults to SF Rounded, and the page
-/// comes into focus when it first appears, like a camera lens focusing.
 struct SkyScrollView<Content: View>: View {
     @ViewBuilder let content: () -> Content
     @State private var inFocus = false
@@ -30,9 +28,7 @@ struct SkyScrollView<Content: View>: View {
 }
 
 extension EnvironmentValues {
-    /// Height of the screen behind the current scroll view, so content can work out what's behind it.
     @Entry var skyHeight: CGFloat = 0
-    /// How far the sky has scrolled: 0 at the top of the page, 1 at the bottom.
     @Entry var skyScrollDepth: Double = 0
 }
 
@@ -69,7 +65,6 @@ private struct SkyScrollBackground: ViewModifier {
                 .ignoresSafeArea()
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { skyHeight = $0 }
             }
-            // Default text colors for anything that doesn't use `.readableOnSky()`.
             .foregroundStyle(text.color, text.color.opacity(0.8), text.color.opacity(0.3))
             .environment(\.skyHeight, skyHeight)
             .environment(\.skyScrollDepth, depth)
@@ -77,25 +72,18 @@ private struct SkyScrollBackground: ViewModifier {
 }
 
 extension View {
-    /// Adds the sky background to any scrollable view (`ScrollView`, `List`, `Form`).
     func skyScrollBackground() -> some View {
         modifier(SkyScrollBackground())
     }
 
-    /// A translucent card tinted to the current sky.
     func themedCard() -> some View {
         modifier(ThemedCard())
     }
 
-    /// Colors text (and anything using `.primary`, `.secondary` or `.tertiary`) to stay readable
-    /// on the part of the sky directly behind this view, updating as it scrolls.
-    /// Use on each item inside a `SkyScrollView`.
     func readableOnSky() -> some View {
         modifier(ReadableOnSky())
     }
 
-    /// Softly blurs and fades the view as it scrolls off screen, like going out of focus,
-    /// and brings it back into focus as it scrolls in. Use on each item inside a `SkyScrollView`.
     func fadesOnScroll() -> some View {
         modifier(FadeOnScroll())
     }
@@ -103,17 +91,41 @@ extension View {
 
 private struct FadeOnScroll: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.weatherTheme) private var theme
+    @Environment(\.skyHeight) private var skyHeight
+    @Environment(\.skyScrollDepth) private var skyScrollDepth
+    @State private var centerY: CGFloat?
 
     func body(content: Content) -> some View {
         let motion: Double = reduceMotion ? 0 : 1
-        content.scrollTransition(.interactive, axis: .vertical) { view, phase in
-            // phase.value is 0 when fully on screen and approaches ±1 as the view leaves.
-            let distance = abs(phase.value)
-            return view
-                .opacity(1 - distance * 0.8)
-                .blur(radius: distance * 8 * motion)
-                .scaleEffect(1 - distance * 0.04 * motion)
-        }
+        // Dark text turning see-through looks gray and muddy, so it fades to white instead.
+        let fraction = skyHeightFraction(centerY: centerY, skyHeight: skyHeight, scrollDepth: skyScrollDepth)
+        let fadesToWhite = theme.textColor(atHeight: fraction) == .ink
+
+        content
+            .scrollTransition(.interactive, axis: .vertical) { view, phase in
+                let distance = abs(phase.value)
+                return view
+                    .brightness(fadesToWhite ? distance * 0.9 : 0)
+                    .opacity(1 - distance * 0.8)
+                    .blur(radius: distance * 8 * motion)
+                    .scaleEffect(1 - distance * 0.04 * motion)
+            }
+            .trackSkyPosition($centerY)
+    }
+}
+
+private func skyHeightFraction(centerY: CGFloat?, skyHeight: CGFloat, scrollDepth: Double) -> Double {
+    guard let centerY, skyHeight > 0 else { return 0.5 }
+    let skyY = Double(centerY) + scrollDepth * Double(skyHeight * skyOverscan)
+    return min(max(skyY / Double(skyHeight * (1 + skyOverscan)), 0), 1)
+}
+
+private extension View {
+    func trackSkyPosition(_ centerY: Binding<CGFloat?>) -> some View {
+        onGeometryChange(for: CGFloat.self) { proxy in
+            (proxy.frame(in: .global).midY / 20).rounded() * 20
+        } action: { centerY.wrappedValue = $0 }
     }
 }
 
@@ -121,21 +133,12 @@ private struct ReadableOnSky: ViewModifier {
     @Environment(\.weatherTheme) private var theme
     @Environment(\.skyHeight) private var skyHeight
     @Environment(\.skyScrollDepth) private var skyScrollDepth
-    /// This view's vertical center on screen, rounded to 20-point steps so scrolling
-    /// doesn't recalculate colors on every frame.
     @State private var centerY: CGFloat?
 
-    /// Where the view sits against the whole (taller, scrolled) sky, from 0 (top) to 1 (bottom).
-    private var heightFraction: Double {
-        guard let centerY, skyHeight > 0 else { return 0.5 }
-        let skyY = Double(centerY) + skyScrollDepth * Double(skyHeight * skyOverscan)
-        return min(max(skyY / Double(skyHeight * (1 + skyOverscan)), 0), 1)
-    }
-
     func body(content: Content) -> some View {
-        let background = theme.skyColor(atHeight: heightFraction)
+        let fraction = skyHeightFraction(centerY: centerY, skyHeight: skyHeight, scrollDepth: skyScrollDepth)
+        let background = theme.skyColor(atHeight: fraction)
         let text = background.legibleForeground
-        // If even the best choice is hard to read (e.g. mid-tone sunset skies), add a soft halo.
         let needsHalo = text.contrastRatio(with: background) < 4.5
         let halo = (text == .white ? RGB.ink : RGB.white).color
 
@@ -143,9 +146,7 @@ private struct ReadableOnSky: ViewModifier {
             .foregroundStyle(text.color, text.color.opacity(0.8), text.color.opacity(0.3))
             .shadow(color: needsHalo ? halo.opacity(0.35) : .clear, radius: 3)
             .animation(.easeInOut(duration: 0.3), value: text)
-            .onGeometryChange(for: CGFloat.self) { proxy in
-                (proxy.frame(in: .global).midY / 20).rounded() * 20
-            } action: { centerY = $0 }
+            .trackSkyPosition($centerY)
     }
 }
 
@@ -160,7 +161,6 @@ private struct ThemedCard: ViewModifier {
     }
 }
 
-/// The sky: gradient, stars at night, and a warm glow on the horizon around sunrise/sunset.
 struct SkyBackground: View {
     let theme: WeatherTheme
 
@@ -204,7 +204,6 @@ private struct StarField: View {
     }
 }
 
-/// A tiny repeatable random generator (SplitMix64): the same starting state gives the same stars.
 private struct SeededGenerator: RandomNumberGenerator {
     var state: UInt64
 

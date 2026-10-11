@@ -7,10 +7,8 @@
 
 import Foundation
 
-/// The sun's height above the horizon in degrees (negative = below it).
 nonisolated struct SunPosition: Equatable, Sendable {
     var elevation: Double
-    /// True before solar noon, so sunrise and sunset can look different.
     var isRising: Bool
 
     /// Solar position using NOAA's approximation (accurate to well under a degree).
@@ -39,8 +37,6 @@ nonisolated struct SunPosition: Equatable, Sendable {
         return SunPosition(elevation: elevation, isRising: hourAngle < 0)
     }
 
-    /// Rough guess from the local clock when location isn't available:
-    /// sunrise around 6am, sunset around 6pm.
     static func estimated(at date: Date, calendar: Calendar = .current) -> SunPosition {
         let time = calendar.dateComponents([.hour, .minute], from: date)
         let hour = Double(time.hour ?? 12) + Double(time.minute ?? 0) / 60
@@ -56,7 +52,6 @@ nonisolated enum ThemeEngine {
         let glow: Double
     }
 
-    // Clear-sky colors at a given sun elevation, interpolated in between.
     private static let eveningSky: [SkyKey] = [
         SkyKey(elevation: -90, top: 0x05081A, horizon: 0x0E1430, glow: 0),
         SkyKey(elevation: -18, top: 0x0B1026, horizon: 0x1B2340, glow: 0),
@@ -86,7 +81,6 @@ nonisolated enum ThemeEngine {
         SkyKey(elevation: 90, top: 0x2A74D0, horizon: 0x8CC2EE, glow: 0),
     ]
 
-    /// How a type of weather tints the sky: the color it pulls toward, how strongly, and how much glow survives.
     private struct WeatherTint {
         let top: UInt32
         let horizon: UInt32
@@ -97,7 +91,7 @@ nonisolated enum ThemeEngine {
 
     private static func tint(for condition: SkyCondition) -> WeatherTint? {
         switch condition {
-        case .clear, .cloudy: nil  // Clouds are handled by cloud cover alone.
+        case .clear, .cloudy: nil
         case .rain:  WeatherTint(top: 0x4E5D6C, horizon: 0x6F7D8A, topAmount: 0.55, horizonAmount: 0.55, glowKept: 0.3)
         case .storm: WeatherTint(top: 0x2B323D, horizon: 0x434C59, topAmount: 0.7, horizonAmount: 0.65, glowKept: 0.1)
         case .snow:  WeatherTint(top: 0xC9D2DC, horizon: 0xE4E9EF, topAmount: 0.5, horizonAmount: 0.55, glowKept: 0.4)
@@ -108,24 +102,22 @@ nonisolated enum ThemeEngine {
     static func theme(sun: SunPosition, cloudCover: Double, condition: SkyCondition) -> WeatherTheme {
         let elevation = sun.elevation
         let clouds = min(max(cloudCover, 0), 1)
-        let daylight = 0.12 + 0.88 * smoothstep(-12, 8, elevation)  // 0.12 at night, 1 in full day
+        let daylight = 0.12 + 0.88 * smoothstep(-12, 8, elevation)
 
-        // 1. Clear-sky colors for this sun height.
         var (top, horizon, glow) = sample(sun.isRising ? morningSky : eveningSky, at: elevation)
 
-        // 2. Clouds wash the color out and block the sunset glow.
+        // Clouds wash the color out and block the sunset glow.
         top = top.desaturated(by: clouds * 0.55)
         horizon = horizon.desaturated(by: clouds * 0.6)
         glow *= 1 - clouds * 0.8
 
-        // 3. Rain, storms, snow and fog tint the sky toward their own color, dimmed at night.
+        // Rain, storms, snow and fog tint the sky toward their own color, dimmed at night.
         if let tint = tint(for: condition) {
             top = top.mixed(with: RGB(hex: tint.top).scaled(daylight), by: tint.topAmount)
             horizon = horizon.mixed(with: RGB(hex: tint.horizon).scaled(daylight), by: tint.horizonAmount)
             glow *= tint.glowKept
         }
 
-        // 4. Derived values.
         let sunGlow = horizon.mixed(with: RGB(hex: 0xFFD27A), by: 0.4)
         let skyIsClear = condition == .clear || condition == .cloudy
         let stars = skyIsClear ? (1 - smoothstep(-14, -4, elevation)) * (1 - clouds) : 0
