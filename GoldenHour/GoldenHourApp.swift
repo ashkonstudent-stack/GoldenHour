@@ -12,7 +12,7 @@ struct GoldenHourApp: App {
     @StateObject var vManager = viewModel()
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            SpawnPoint()
                 .environmentObject(vManager)
                 .weatherThemed(using: vManager)
         }

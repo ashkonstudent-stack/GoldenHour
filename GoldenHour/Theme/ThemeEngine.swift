@@ -86,72 +86,52 @@ nonisolated enum ThemeEngine {
         SkyKey(elevation: 90, top: 0x2A74D0, horizon: 0x8CC2EE, glow: 0),
     ]
 
+    /// How a type of weather tints the sky: the color it pulls toward, how strongly, and how much glow survives.
+    private struct WeatherTint {
+        let top: UInt32
+        let horizon: UInt32
+        let topAmount: Double
+        let horizonAmount: Double
+        let glowKept: Double
+    }
+
+    private static func tint(for condition: SkyCondition) -> WeatherTint? {
+        switch condition {
+        case .clear, .cloudy: nil  // Clouds are handled by cloud cover alone.
+        case .rain:  WeatherTint(top: 0x4E5D6C, horizon: 0x6F7D8A, topAmount: 0.55, horizonAmount: 0.55, glowKept: 0.3)
+        case .storm: WeatherTint(top: 0x2B323D, horizon: 0x434C59, topAmount: 0.7, horizonAmount: 0.65, glowKept: 0.1)
+        case .snow:  WeatherTint(top: 0xC9D2DC, horizon: 0xE4E9EF, topAmount: 0.5, horizonAmount: 0.55, glowKept: 0.4)
+        case .fog:   WeatherTint(top: 0xB9BFC6, horizon: 0xD3D7DB, topAmount: 0.6, horizonAmount: 0.7, glowKept: 0.4)
+        }
+    }
+
     static func theme(sun: SunPosition, cloudCover: Double, condition: SkyCondition) -> WeatherTheme {
-        let e = sun.elevation
-        let cover = min(max(cloudCover, 0), 1)
-        // 0.12 at night up to 1 in full daylight.
-        let light = 0.12 + 0.88 * smoothstep(-12, 8, e)
+        let elevation = sun.elevation
+        let clouds = min(max(cloudCover, 0), 1)
+        let daylight = 0.12 + 0.88 * smoothstep(-12, 8, elevation)  // 0.12 at night, 1 in full day
 
-        var (top, horizon, glow) = sample(sun.isRising ? morningSky : eveningSky, at: e)
+        // 1. Clear-sky colors for this sun height.
+        var (top, horizon, glow) = sample(sun.isRising ? morningSky : eveningSky, at: elevation)
 
-        // Clouds wash the color out and block the sunset glow.
-        top = top.desaturated(by: cover * 0.55)
-        horizon = horizon.desaturated(by: cover * 0.6)
-        glow *= 1 - cover * 0.8
+        // 2. Clouds wash the color out and block the sunset glow.
+        top = top.desaturated(by: clouds * 0.55)
+        horizon = horizon.desaturated(by: clouds * 0.6)
+        glow *= 1 - clouds * 0.8
 
-        switch condition {
-        case .clear, .cloudy:
-            break
-        case .rain:
-            top = top.mixed(with: RGB(hex: 0x4E5D6C).scaled(light), by: 0.55)
-            horizon = horizon.mixed(with: RGB(hex: 0x6F7D8A).scaled(light), by: 0.55)
-            glow *= 0.3
-        case .storm:
-            top = top.mixed(with: RGB(hex: 0x2B323D).scaled(light), by: 0.7)
-            horizon = horizon.mixed(with: RGB(hex: 0x434C59).scaled(light), by: 0.65)
-            glow *= 0.1
-        case .snow:
-            top = top.mixed(with: RGB(hex: 0xC9D2DC).scaled(light), by: 0.5)
-            horizon = horizon.mixed(with: RGB(hex: 0xE4E9EF).scaled(light), by: 0.55)
-            glow *= 0.4
-        case .fog:
-            top = top.mixed(with: RGB(hex: 0xB9BFC6).scaled(light), by: 0.6)
-            horizon = horizon.mixed(with: RGB(hex: 0xD3D7DB).scaled(light), by: 0.7)
-            glow *= 0.4
+        // 3. Rain, storms, snow and fog tint the sky toward their own color, dimmed at night.
+        if let tint = tint(for: condition) {
+            top = top.mixed(with: RGB(hex: tint.top).scaled(daylight), by: tint.topAmount)
+            horizon = horizon.mixed(with: RGB(hex: tint.horizon).scaled(daylight), by: tint.horizonAmount)
+            glow *= tint.glowKept
         }
 
+        // 4. Derived values.
         let sunGlow = horizon.mixed(with: RGB(hex: 0xFFD27A), by: 0.4)
-
-        var stars = (1 - smoothstep(-14, -4, e)) * (1 - cover)
-        if condition != .clear && condition != .cloudy { stars = 0 }
-
-        // Ground: grass over soil, dimmed at night and warmed by a low sun.
-        var surface: RGB
-        var soil = RGB(hex: 0x4A3322)
-        var deep = RGB(hex: 0x24180F)
-        switch condition {
-        case .snow:
-            surface = RGB(hex: 0xEEF2F6)
-            soil = RGB(hex: 0xB9C3CD)
-            deep = RGB(hex: 0x5E5048)
-        case .rain, .storm:
-            surface = RGB(hex: 0x3F6B2E)
-            soil = RGB(hex: 0x3A2819)
-        default:
-            surface = RGB(hex: 0x5C8A3C)
-        }
-        let groundLight = 0.15 + 0.85 * (light - 0.12) / 0.88
-        surface = surface.scaled(groundLight).mixed(with: sunGlow.scaled(groundLight), by: glow * 0.25)
-        soil = soil.scaled(0.3 + 0.7 * groundLight)
-        deep = deep.scaled(0.4 + 0.6 * groundLight)
-
-        // Distant hills fade into the horizon (atmospheric perspective).
-        let nearHills = surface
-        let farHills = nearHills.mixed(with: horizon, by: 0.45)
-
+        let skyIsClear = condition == .clear || condition == .cloudy
+        let stars = skyIsClear ? (1 - smoothstep(-14, -4, elevation)) * (1 - clouds) : 0
         let accent = glow > 0.3
             ? sunGlow
-            : top.mixed(with: .white, by: e < -6 ? 0.45 : 0.15)
+            : top.mixed(with: .white, by: elevation < -6 ? 0.45 : 0.15)
 
         return WeatherTheme(
             phase: phase(for: sun),
@@ -161,11 +141,6 @@ nonisolated enum ThemeEngine {
             sunGlow: sunGlow,
             glowIntensity: glow,
             starOpacity: stars,
-            farHills: farHills,
-            nearHills: nearHills,
-            groundSurface: surface,
-            groundSoil: soil,
-            groundDeep: deep,
             accent: accent
         )
     }

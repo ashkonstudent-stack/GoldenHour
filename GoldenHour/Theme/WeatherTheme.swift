@@ -13,46 +13,63 @@ nonisolated struct RGB: Equatable, Sendable {
     var g: Double
     var b: Double
 
-    init(_ r: Double, _ g: Double, _ b: Double) {
-        self.r = r
-        self.g = g
-        self.b = b
-    }
-
-    init(hex: UInt32) {
-        self.init(
-            Double((hex >> 16) & 0xFF) / 255,
-            Double((hex >> 8) & 0xFF) / 255,
-            Double(hex & 0xFF) / 255
-        )
-    }
-
-    static let white = RGB(1, 1, 1)
+    static let white = RGB(hex: 0xFFFFFF)
     static let ink = RGB(hex: 0x1A1D24)
 
+    /// Perceived brightness from 0 (black) to 1 (white).
     var luminance: Double { 0.2126 * r + 0.7152 * g + 0.0722 * b }
 
     var color: Color { Color(red: r, green: g, blue: b) }
 
-    func mixed(with other: RGB, by t: Double) -> RGB {
-        let t = min(max(t, 0), 1)
-        return RGB(r + (other.r - r) * t, g + (other.g - g) * t, b + (other.b - b) * t)
+    /// Blends toward `other`: 0 keeps this color, 1 gives `other`.
+    func mixed(with other: RGB, by amount: Double) -> RGB {
+        let t = min(max(amount, 0), 1)
+        return RGB(
+            r: r + (other.r - r) * t,
+            g: g + (other.g - g) * t,
+            b: b + (other.b - b) * t
+        )
     }
 
     /// Multiplies brightness; values below 1 darken.
     func scaled(_ factor: Double) -> RGB {
-        RGB(min(r * factor, 1), min(g * factor, 1), min(b * factor, 1))
+        RGB(r: min(r * factor, 1), g: min(g * factor, 1), b: min(b * factor, 1))
     }
 
     /// Pulls the color toward a slightly cool gray of the same brightness.
-    func desaturated(by t: Double) -> RGB {
-        let l = luminance
-        return mixed(with: RGB(l * 0.97, l, l * 1.04), by: t)
+    func desaturated(by amount: Double) -> RGB {
+        let gray = RGB(r: luminance * 0.97, g: luminance, b: luminance * 1.04)
+        return mixed(with: gray, by: amount)
+    }
+
+    /// Brightness as the eye sees it (WCAG relative luminance), used for contrast checks.
+    var relativeLuminance: Double {
+        func linear(_ c: Double) -> Double { c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
+        return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+    }
+
+    /// WCAG contrast ratio, from 1 (none) to 21 (black on white). 4.5 or more reads well for body text.
+    func contrastRatio(with other: RGB) -> Double {
+        let lighter = max(relativeLuminance, other.relativeLuminance)
+        let darker = min(relativeLuminance, other.relativeLuminance)
+        return (lighter + 0.05) / (darker + 0.05)
     }
 
     /// White or near-black, whichever reads better on top of this color.
-    /// Biased toward white, which reads better on saturated sky blues.
-    var legibleForeground: RGB { luminance > 0.72 ? .ink : .white }
+    /// Slightly favors white, which looks better on saturated skies when both are close.
+    var legibleForeground: RGB {
+        contrastRatio(with: .white) >= contrastRatio(with: .ink) * 0.85 ? .white : .ink
+    }
+}
+
+// Declared in an extension so RGB keeps Swift's automatic `RGB(r:g:b:)` initializer.
+extension RGB {
+    /// A color from a hex value, e.g. `RGB(hex: 0xFF8800)`.
+    nonisolated init(hex: UInt32) {
+        r = Double((hex >> 16) & 0xFF) / 255
+        g = Double((hex >> 8) & 0xFF) / 255
+        b = Double(hex & 0xFF) / 255
+    }
 }
 
 /// The broad weather categories the theme reacts to.
@@ -92,13 +109,6 @@ nonisolated struct WeatherTheme: Equatable, Sendable {
     /// 0...1, how visible stars are.
     var starOpacity: Double
 
-    // Ground
-    var farHills: RGB
-    var nearHills: RGB
-    var groundSurface: RGB
-    var groundSoil: RGB
-    var groundDeep: RGB
-
     /// Tint for buttons, toggles and highlights.
     var accent: RGB
 
@@ -110,32 +120,23 @@ nonisolated struct WeatherTheme: Equatable, Sendable {
         LinearGradient(colors: [skyTop.color, skyHorizon.color], startPoint: .top, endPoint: .bottom)
     }
 
-    var groundGradient: LinearGradient {
-        LinearGradient(
-            stops: [
-                .init(color: groundSurface.color, location: 0),
-                .init(color: groundSurface.scaled(0.75).color, location: 0.12),
-                .init(color: groundSoil.color, location: 0.3),
-                .init(color: groundDeep.color, location: 1),
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-    }
-
-    /// Text color for content over the sky.
+    /// Text color for content over the middle of the sky.
     var skyForeground: Color {
-        skyTop.mixed(with: skyHorizon, by: 0.5).legibleForeground.color
+        textColor(atHeight: 0.5).color
     }
 
-    /// Text color for content over the ground.
-    var groundForeground: Color {
-        groundSoil.legibleForeground.color
+    /// The sky color at a height on screen (0 = top, 1 = bottom), including the glow near the horizon.
+    func skyColor(atHeight fraction: Double) -> RGB {
+        let f = min(max(fraction, 0), 1)
+        let base = skyTop.mixed(with: skyHorizon, by: f)
+        // Matches SkyBackground's radial glow, which fades out 60% of the way up from the bottom.
+        let glow = glowIntensity * max(0, 1 - (1 - f) / 0.6)
+        return base.mixed(with: sunGlow, by: glow)
     }
 
-    /// Text color for a scroll depth from 0 (sky) to 1 (ground).
-    func foreground(atDepth depth: Double) -> Color {
-        depth < 0.5 ? skyForeground : groundForeground
+    /// The most readable text color at a height on screen (0 = top, 1 = bottom).
+    func textColor(atHeight fraction: Double) -> RGB {
+        skyColor(atHeight: fraction).legibleForeground
     }
 
     /// Shown until the first location/weather fix arrives: estimated from the clock.

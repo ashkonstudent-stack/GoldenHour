@@ -9,34 +9,29 @@ import SwiftUI
 import WeatherKit
 
 struct ContentView: View {
-    @EnvironmentObject var vManager: viewModel
-
     var body: some View {
         SkyScrollView {
-            WeatherOverview(
-                weatherHandler: vManager.weatherHandler,
-                locationManager: vManager.locationManager
-            )
-            .padding()
+            WeatherOverview()
+                .padding()
         }
     }
 }
 
 private struct WeatherOverview: View {
-    @ObservedObject var weatherHandler: WeatherKitHandler
-    @ObservedObject var locationManager: LocationManager
+    @EnvironmentObject var vManager: viewModel
     @Environment(\.weatherTheme) private var theme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
+                Text(vManager.greeting())
                 Text(theme.phase.displayName)
                     .font(.largeTitle.bold())
-                if let weather = weatherHandler.currentWeather {
-                    Text("\(weather.temperature.formatted(.measurement(width: .abbreviated))) · \(weather.condition.description)")
+                if let weather = vManager.weatherHandler.currentWeather {
+                    Text("\(weather.temperature.wholeDegrees) · \(weather.condition.description)")
                         .font(.title3)
-                } else if let error = locationManager.errorMessage {
-                    Text(error).font(.callout)
+                } else if vManager.locationManager.location == nil {
+                    Text("Finding your location…").font(.title3)
                 } else {
                     Text("Reading the sky…").font(.title3)
                 }
@@ -44,17 +39,29 @@ private struct WeatherOverview: View {
             .padding(.top, 40)
             .padding(.bottom, 200)
 
-            ForEach(weatherHandler.hourlyForecast.prefix(24), id: \.date) { hour in
+            ForEach(upcomingHours, id: \.date) { hour in
                 HStack {
                     Text(hour.date.formatted(date: .omitted, time: .shortened))
                     Spacer()
                     Image(systemName: hour.symbolName)
-                    Text(hour.temperature.formatted(.measurement(width: .abbreviated)))
+                    Text(hour.temperature.wholeDegrees)
                 }
                 .themedCard()
             }
         }
+    }
 
+    /// The next 24 hours, starting with the current one.
+    private var upcomingHours: [HourWeather] {
+        let oneHourAgo = Date.now.addingTimeInterval(-3600)
+        return Array(vManager.weatherHandler.hourlyForecast.filter { $0.date > oneHourAgo }.prefix(24))
+    }
+}
+
+private extension Measurement where UnitType == UnitTemperature {
+    /// e.g. "67°F", in the user's preferred unit.
+    var wholeDegrees: String {
+        formatted(.measurement(width: .abbreviated, numberFormatStyle: .number.precision(.fractionLength(0))))
     }
 }
 
